@@ -1,8 +1,13 @@
 {
-  "name": "pilot",
-  "version": "0.2.0",
+  "name": "pilot-scorecard",
+  "displayName": "Pilot scorecard",
+  "version": "0.3.0",
   "description": "Per-engineer scorecard for working with Claude Code: brief quality, verification, context hygiene, delegation, flow. Daily series, 7/14/30/60-day windows vs the prior window, one-week experiments, opt-in comparison with teammates.",
   "license": "MIT",
+  "author": {
+    "name": "Shor Consulting Inc.",
+    "url": "https://github.com/ShorConsultingInc"
+  },
   "types": "./types/index.d.ts",
   "userConfig": {
     "scoresRepo": {
@@ -11,9 +16,5 @@
       "description": "GitHub repo that holds shared scores (owner/name). /pilot share opens an issue there; /pilot compare reads from it.",
       "default": "ShorConsultingInc/pilot-scores"
     }
-  },
-  "author": {
-    "name": "Shor Consulting Inc.",
-    "url": "https://github.com/ShorConsultingInc"
   }
 }

@@ -31,7 +31,7 @@ export type Peer = {
 
 declare module 'claude-code' {
   interface PluginState {
-    pilot: {
+    'pilot-scorecard': {
       report: Shaped<Report | null>
       experiment: Shaped<Experiment | null>
       window: Shaped<number>

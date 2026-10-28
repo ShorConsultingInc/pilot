@@ -1,4 +1,4 @@
-# Pilot: your Claude Code scorecard
+# Pilot scorecard: your Claude Code scorecard
 
 Pilot scores how *you* work with Claude Code, not how Claude performs. It reads the session transcripts already on your machine, scores five dimensions against your own prior four weeks, names the weakest one with its concrete causes, and runs one-week experiments to fix it. Nothing leaves your machine.
 
@@ -37,10 +37,21 @@ Sharing is opt-in and numbers-only: five scores per window plus their baselines.
 At the prompt of a terminal session:
 
 ```
-/plugin install pilot --marketplace ShorConsultingInc/pilot
+/plugin install pilot-scorecard --marketplace ShorConsultingInc/pilot
 ```
 
 Needs `python3` on the path. The analyzer is stdlib only and caches per-transcript summaries in `~/.claude/pilot/cache.json`, so re-scoring is fast.
+
+## What it runs, reads, writes and sends
+
+For the directory's reviewers and for you. The hooks module is `hooks/register.tsx`; every call below is in it.
+
+- **Runs:** `python3 scripts/pilot.py` from the plugin's own folder (with `--since <ISO date>` when ending an experiment), and `gh issue create --repo <scoresRepo> --title "pilot scores" --body-file -` only when you run `/pilot share`. Nothing else is started. The scores JSON is passed to `gh` on stdin; the mod writes no files.
+- **Reads:** the analyzer script reads the Claude Code transcripts under `~/.claude/projects` on this machine and caches per-session counts in `~/.claude/pilot/cache.json`. The mod itself reads only the script's JSON output and its own plugin store.
+- **Sends:** nothing, unless you run `/pilot share`, which sends the five scores per window plus baselines (see `scores-repo/README.md`) to the GitHub repo named by the `scoresRepo` option, through your own signed-in `gh`.
+- **Fetches:** `/pilot compare <login>` reads one file, `https://raw.githubusercontent.com/<scoresRepo>/main/scores/<login>.json`. No other host is contacted.
+- **Hooks on tool calls and prompts:** the `prompt.submit`, `tool.call{Bash}` and `tool.call{Read}` hooks only look at the prompt or the command to decide whether to show a toast while an experiment is running. They never rewrite, block or record anything, and pass every event through unchanged.
+- **Commands:** registers `/pilot` and answers it itself. It runs no other slash commands.
 
 ## What it is not
 

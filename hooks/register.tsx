@@ -5,12 +5,12 @@ import type { Dim, DimKey, Experiment, Peer, Report } from '../types'
 
 const PANE = 'pilot'
 const WINDOWS = [7, 14, 30, 60]
-const report = atom({ plugin: 'pilot', key: 'report' } as const, null, { shape: 'report-2' })
-const experiment = atom({ plugin: 'pilot', key: 'experiment' } as const, null, {
+const report = atom({ plugin: 'pilot-scorecard', key: 'report' } as const, null, { shape: 'report-2' })
+const experiment = atom({ plugin: 'pilot-scorecard', key: 'experiment' } as const, null, {
   shape: 'experiment-1',
 })
-const window = atom({ plugin: 'pilot', key: 'window' } as const, 7, { shape: 'window-1' })
-const peer = atom({ plugin: 'pilot', key: 'peer' } as const, null, { shape: 'peer-1' })
+const window = atom({ plugin: 'pilot-scorecard', key: 'window' } as const, 7, { shape: 'window-1' })
+const peer = atom({ plugin: 'pilot-scorecard', key: 'peer' } as const, null, { shape: 'peer-1' })
 
 // One rule per dimension: the smallest process change that moves that score.
 const RULES: Record<DimKey, string> = {
@@ -62,6 +62,44 @@ function sharePayload(r: Report) {
   return { version: 1, generatedAt: r.generatedAt, windows }
 }
 
+async function startExperiment($: EngineInterface): Promise<string> {
+  const r = (await read($, report)) ?? (await refresh($))
+  const win = r?.windows['7']
+  if (!win?.weakest) return 'pilot: no scores yet, run /pilot refresh first.'
+  const dim = win.dims.find(d => d.key === win.weakest)!
+  const exp: Experiment = {
+    dim: dim.key,
+    rule: RULES[dim.key],
+    startedAt: new Date(await $.clock.now()).toISOString(),
+    baseline: dim.score,
+  }
+  await update($, experiment, () => exp)
+  await $.store.set('experiment', exp)
+  return `pilot: experiment on ${dim.name} (score ${dim.score}). Rule for the week: ${exp.rule}`
+}
+
+async function stopExperiment($: EngineInterface): Promise<string> {
+  const exp = await read($, experiment)
+  if (!exp) return 'pilot: no experiment running.'
+  const r = await refresh($, exp.startedAt)
+  const dim = r?.windows.since?.dims.find(d => d.key === exp.dim)
+  await update($, experiment, () => null)
+  await $.store.delete('experiment')
+  return `pilot: ${dim?.name ?? exp.dim} went ${exp.baseline} → ${dim?.score ?? 'n/a'} (${delta(dim?.score ?? null, exp.baseline) || 'n/a'}) since ${exp.startedAt.slice(0, 10)}. Keep the rule if it helped: add it to your CLAUDE.md.`
+}
+
+// Reads one published scores file from the scores repo on raw.githubusercontent.com; nothing else is contacted.
+async function compare($: EngineInterface, scoresRepo: string, login: string): Promise<string> {
+  if (!/^[A-Za-z0-9-]{1,39}$/.test(login) || !/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(scoresRepo)) {
+    return 'pilot: login and scoresRepo must be plain GitHub names.'
+  }
+  const res = await $.http.fetch(`https://raw.githubusercontent.com/${scoresRepo}/main/scores/${login}.json`)
+  if (!res.ok) return `pilot: no published scores for "${login}" in ${scoresRepo} (HTTP ${res.status}).`
+  const p = JSON.parse(res.text) as Peer
+  await update($, peer, () => p)
+  return `pilot: comparing with ${p.login}.`
+}
+
 export const register: Register = (on, options) => {
   const scoresRepo = typeof options.scoresRepo === 'string' && options.scoresRepo ? options.scoresRepo : 'ShorConsultingInc/pilot-scores'
   let testedThisSession = false
@@ -90,42 +128,15 @@ export const register: Register = (on, options) => {
       return { text: `pilot: showing last ${w} days vs the ${w} before.` }
     }
 
-    if (verb === 'experiment' && arg !== 'stop') {
-      const r = (await read($, report)) ?? (await refresh($))
-      const win = r?.windows['7']
-      if (!win?.weakest) return { text: 'pilot: no scores yet, run /pilot refresh first.' }
-      const dim = win.dims.find(d => d.key === win.weakest)!
-      const exp: Experiment = {
-        dim: dim.key,
-        rule: RULES[dim.key],
-        startedAt: new Date(await $.clock.now()).toISOString(),
-        baseline: dim.score,
-      }
-      await update($, experiment, () => exp)
-      await $.store.set('experiment', exp)
-      return { text: `pilot: experiment on ${dim.name} (score ${dim.score}). Rule for the week: ${exp.rule}` }
-    }
-
-    if (verb === 'experiment') {
-      const exp = await read($, experiment)
-      if (!exp) return { text: 'pilot: no experiment running.' }
-      const r = await refresh($, exp.startedAt)
-      const dim = r?.windows.since?.dims.find(d => d.key === exp.dim)
-      await update($, experiment, () => null)
-      await $.store.delete('experiment')
-      return {
-        text: `pilot: ${dim?.name ?? exp.dim} went ${exp.baseline} → ${dim?.score ?? 'n/a'} (${delta(dim?.score ?? null, exp.baseline) || 'n/a'}) since ${exp.startedAt.slice(0, 10)}. Keep the rule if it helped: add it to your CLAUDE.md.`,
-      }
-    }
+    if (verb === 'experiment') return { text: arg === 'stop' ? await stopExperiment($) : await startExperiment($) }
 
     if (verb === 'share') {
       const r = (await read($, report)) ?? (await refresh($))
       if (!r) return { text: 'pilot: nothing to share yet.' }
-      const path = `${$.plugin.root}/../pilot-share.json`
-      await $.fs.write(path, JSON.stringify(sharePayload(r), null, 1))
+      // The payload goes to gh on stdin; no file is written.
       const ran = await $.process.run(
-        ['gh', 'issue', 'create', '--repo', scoresRepo, '--title', 'pilot scores', '--body-file', path],
-        { timeoutMs: 60_000 },
+        ['gh', 'issue', 'create', '--repo', scoresRepo, '--title', 'pilot scores', '--body-file', '-'],
+        { stdin: JSON.stringify(sharePayload(r), null, 1), timeoutMs: 60_000 },
       )
       return ran.exitCode === 0
         ? { text: `pilot: scores sent to ${scoresRepo} (${ran.stdout.trim()}). They appear under your GitHub login once the repo's Action folds them.` }
@@ -137,12 +148,7 @@ export const register: Register = (on, options) => {
         await update($, peer, () => null)
         return { text: 'pilot: comparison cleared.' }
       }
-      const url = `https://raw.githubusercontent.com/${scoresRepo}/main/scores/${arg}.json`
-      const res = await $.http.fetch(url)
-      if (!res.ok) return { text: `pilot: no published scores for "${arg}" in ${scoresRepo} (HTTP ${res.status}).` }
-      const p = JSON.parse(res.text) as Peer
-      await update($, peer, () => p)
-      return { text: `pilot: comparing with ${p.login}.` }
+      return { text: await compare($, scoresRepo, arg) }
     }
 
     const r = verb === 'refresh' || !(await read($, report)) ? await refresh($) : await read($, report)
@@ -239,13 +245,13 @@ export const register: Register = (on, options) => {
             <Text>
               Experiment since {exp.startedAt.slice(0, 10)}: {exp.rule}
             </Text>
-            <Button key="stop" label="Stop and measure" onPress={() => $.command.run({ command: 'pilot', args: 'experiment stop' })} />
+            <Button key="stop" label="Stop and measure" onPress={() => stopExperiment($)} />
           </Box>
         ) : (
           <Box>
             <Button key="refresh" label="Refresh" onPress={() => refresh($)} />
-            <Button key="exp" label="Start experiment" onPress={() => $.command.run({ command: 'pilot', args: 'experiment' })} />
-            <Button key="team" label={p ? 'Clear compare' : 'Compare: team'} onPress={() => $.command.run({ command: 'pilot', args: p ? 'compare' : 'compare team' })} />
+            <Button key="exp" label="Start experiment" onPress={() => startExperiment($)} />
+            <Button key="team" label={p ? 'Clear compare' : 'Compare: team'} onPress={() => (p ? update($, peer, () => null) : compare($, scoresRepo, 'team'))} />
           </Box>
         )}
       </Box>

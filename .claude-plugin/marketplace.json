@@ -1,11 +1,11 @@
 {
-  "name": "pilot",
+  "name": "shor-plugins",
   "owner": {
     "name": "Shor Consulting Inc."
   },
   "plugins": [
     {
-      "name": "pilot",
+      "name": "pilot-scorecard",
       "source": "./"
     }
   ],

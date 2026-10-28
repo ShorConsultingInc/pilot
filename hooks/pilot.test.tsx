@@ -3,7 +3,7 @@ import { expect, mock, test } from 'claude-code/testing'
 const RUN = { origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
 
 const PANE = {
-  plugin: 'pilot',
+  plugin: 'pilot-scorecard',
   component: 'Pane',
   requestId: 'pilot',
   props: {
