@@ -1,0 +1,13 @@
+{
+  "name": "pilot",
+  "owner": {
+    "name": "Shor Consulting Inc."
+  },
+  "plugins": [
+    {
+      "name": "pilot",
+      "source": "./"
+    }
+  ],
+  "description": "The pilot mod: a per-engineer scorecard for working with Claude Code."
+}
