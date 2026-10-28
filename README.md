@@ -53,6 +53,10 @@ For the directory's reviewers and for you. The hooks module is `hooks/register.t
 - **Hooks on tool calls and prompts:** the `prompt.submit`, `tool.call{Bash}` and `tool.call{Read}` hooks only look at the prompt or the command to decide whether to show a toast while an experiment is running. They never rewrite, block or record anything, and pass every event through unchanged.
 - **Commands:** registers `/pilot` and answers it itself. It runs no other slash commands.
 
+## Privacy
+
+Everything the analyzer reads stays on your machine: it parses your local Claude Code transcripts, which can contain personal data, and keeps only counts per session in `~/.claude/pilot/cache.json`. Nothing is transmitted unless you run `/pilot share`, which publishes five scores per time window and their baselines, under your GitHub login, to the public scores repository you configured. Those numbers stay there until you open a `pilot remove` issue, which deletes them. There is no server of ours, no telemetry and no analytics.
+
 ## What it is not
 
 Not a cost tracker (use ccusage), not a CLAUDE.md rule writer (use claude-reflect), not a team leaderboard. Scores compare you with your own baseline.
