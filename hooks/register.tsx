@@ -100,6 +100,31 @@ async function compare($: EngineInterface, scoresRepo: string, login: string): P
   return `pilot: comparing with ${p.login}.`
 }
 
+function tone(score: number | null): 'success' | 'warning' | 'error' | 'subtle' {
+  if (score === null) return 'subtle'
+  return score >= 70 ? 'success' : score >= 40 ? 'warning' : 'error'
+}
+
+const COLORS: Record<DimKey, string> = { brief: '#4f8ef7', verify: '#f59e0b', context: '#10b981', delegate: '#a855f7', flow: '#ef4444' }
+const NAMES: Record<DimKey, string> = { brief: 'Brief', verify: 'Verify', context: 'Context', delegate: 'Delegate', flow: 'Flow' }
+
+// Line chart: the window's daily scores solid, the prior window dashed, one line per dimension.
+function chart(cur: Report['daily'], prior: Report['daily'], days: number): string {
+  const W = 620, H = 190, L = 28, R = 8, T = 10, B = 34
+  const x = (i: number) => L + (i * (W - L - R)) / Math.max(1, days - 1)
+  const y = (v: number) => T + ((100 - v) * (H - T - B)) / 100
+  const path = (pts: Report['daily'], k: DimKey) =>
+    pts.map((d, i) => (d.scores[k] === null ? null : `${x(i).toFixed(1)},${y(d.scores[k]!).toFixed(1)}`)).filter(Boolean).map((s, i) => (i ? 'L' : 'M') + s).join(' ')
+  const grid = [0, 25, 50, 75, 100].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#888" stroke-opacity=".25"/><text x="${L - 4}" y="${y(v) + 3}" font-size="9" fill="#888" text-anchor="end">${v}</text>`).join('')
+  const lines = (Object.keys(COLORS) as DimKey[]).map(k =>
+    `<path d="${path(prior, k)}" fill="none" stroke="${COLORS[k]}" stroke-width="1.2" stroke-dasharray="3 3" stroke-opacity=".55"/>` +
+    `<path d="${path(cur, k)}" fill="none" stroke="${COLORS[k]}" stroke-width="2"/>`).join('')
+  const legend = (Object.keys(COLORS) as DimKey[]).map((k, i) =>
+    `<rect x="${L + i * 110}" y="${H - 18}" width="10" height="3" fill="${COLORS[k]}"/><text x="${L + i * 110 + 14}" y="${H - 14}" font-size="10" fill="#888">${NAMES[k]}</text>`).join('')
+  const note = `<text x="${W - R}" y="${H - 14}" font-size="9" fill="#888" text-anchor="end">solid: last ${days}d · dashed: the ${days} before</text>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" font-family="system-ui, sans-serif">${grid}${lines}${legend}${note}</svg>`
+}
+
 export const register: Register = (on, options) => {
   const scoresRepo = typeof options.scoresRepo === 'string' && options.scoresRepo ? options.scoresRepo : 'ShorConsultingInc/pilot-scores'
   let testedThisSession = false
@@ -185,7 +210,10 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const els = $.ui.resolve(e)
+    const { Box, Text, Button } = els
+    const Input = 'Input' in els ? els.Input : null
+    const Svg = 'Svg' in els ? els.Svg : null
     const r = await read($, report)
     const exp = await read($, experiment)
     const w = await read($, window)
@@ -193,65 +221,94 @@ export const register: Register = (on, options) => {
     const win = r?.windows[String(w)]
     if (!r || !win) {
       return (
-        <Box flexDirection="column">
-          <Text dimColor>No scorecard yet.</Text>
-          <Button key="refresh" label="Score my sessions" onPress={() => refresh($)} />
+        <Box flexDirection="column" padding={1} gap="sm">
+          <Text dimColor>No scorecard yet. Scoring reads your local transcripts; nothing leaves the machine.</Text>
+          <Button key="refresh" label="Score my sessions" variant="primary" onPress={() => refresh($)} />
         </Box>
       )
     }
-    const cols = Math.max(20, (e.props.bodyColumns ?? 60) - 2)
-    const sparkCols = Math.min(w, Math.max(7, cols - 30))
-    const cur = r.daily.slice(-sparkCols)
-    const prior = r.daily.slice(-2 * sparkCols, -sparkCols)
+    const cols = Math.max(40, (e.props.bodyColumns ?? 80) - 2)
+    const sparkCols = Math.min(w, Math.max(7, cols - 56))
+    const cur = r.daily.slice(-w)
+    const prior = r.daily.slice(-2 * w, -w)
     const weakest = win.dims.find(d => d.key === win.weakest)
     const peerScore = (d: Dim) => p?.windows[String(w)]?.[d.key]?.score ?? null
+    const num = (n: number | null) => (n === null ? 'n/a' : String(n)).padStart(4)
 
     return (
-      <Box flexDirection="column">
-        <Box>
-          {WINDOWS.map(n => (
-            <Button key={`w${n}`} label={n === w ? `[${n}d]` : `${n}d`} plain onPress={() => update($, window, () => n)} />
-          ))}
+      <Box flexDirection="column" padding={1} gap="sm">
+        <Box justifyContent="space-between">
+          <Box gap="xs">
+            {WINDOWS.map(n => (
+              <Button key={`w${n}`} label={`${n}d`} variant={n === w ? 'primary' : 'secondary'} onPress={() => update($, window, () => n)} />
+            ))}
+          </Box>
           <Text dimColor>
-            {'  '}{win.sessions} sessions · vs prior {w}d · {r.generatedAt.slice(0, 16).replace('T', ' ')}
+            {win.sessions} sessions · last {w}d vs the {w} before · {r.generatedAt.slice(0, 16).replace('T', ' ')}
           </Text>
         </Box>
-        {win.dims.map(d => (
-          <Box key={d.key} flexDirection="column">
-            <Text mono>
-              {d.name.padEnd(16)} {bar(d.score)} {delta(d.score, d.baseline).padStart(4)}
-              {p ? `  ${p.login}: ${peerScore(d) ?? 'n/a'} ${delta(d.score, peerScore(d))}` : ''}
-            </Text>
-            <Text mono dimColor>
-              {' '.repeat(17)}{spark(cur.map(x => x.scores[d.key]))} now
-            </Text>
-            <Text mono dimColor>
-              {' '.repeat(17)}{spark(prior.map(x => x.scores[d.key]))} prior
-            </Text>
-          </Box>
-        ))}
+
+        <Box flexDirection="column">
+          <Text mono dimColor>
+            {'Dimension'.padEnd(16)} {'Now'.padStart(4)} {'Prior'.padStart(5)} {'Δ'.padStart(4)}
+            {p ? ` ${p.login.slice(0, 8).padStart(8)} ${'Δ'.padStart(4)}` : ''}
+            {'  '}now / prior
+          </Text>
+          {win.dims.map(d => {
+            const dv = d.score !== null && d.baseline !== null ? d.score - d.baseline : null
+            const pv = d.score !== null && peerScore(d) !== null ? d.score - peerScore(d)! : null
+            return (
+              <Box key={d.key}>
+                <Text mono weight={d.key === win.weakest ? 'bold' : 'regular'}>{d.name.padEnd(16)} </Text>
+                <Text mono weight="bold" color={tone(d.score)}>{num(d.score)}</Text>
+                <Text mono dimColor> {num(d.baseline).padStart(5)} </Text>
+                <Text mono color={dv === null ? 'subtle' : dv >= 0 ? 'success' : 'error'}>{delta(d.score, d.baseline).padStart(4) || ' n/a'}</Text>
+                {p ? <Text mono> {num(peerScore(d)).padStart(8)} </Text> : null}
+                {p ? <Text mono color={pv === null ? 'subtle' : pv >= 0 ? 'success' : 'error'}>{delta(d.score, peerScore(d)).padStart(4) || ' n/a'}</Text> : null}
+                <Text mono color={tone(d.score)}>  {spark(cur.slice(-sparkCols).map(x => x.scores[d.key]))}</Text>
+                <Text mono dimColor> / {spark(prior.slice(-sparkCols).map(x => x.scores[d.key]))}</Text>
+              </Box>
+            )
+          })}
+          <Text mono dimColor>{' '.repeat(17)}{spark(cur.slice(-sparkCols).map(x => x.scores[win.weakest ?? 'brief']))} now</Text>
+        </Box>
+
+        {Svg ? <Svg source={chart(cur, prior, w)} alt={`Daily scores for the last ${w} days, solid, against the ${w} before, dashed.`} width={Math.min(620, cols * 8)} /> : null}
+
         {weakest && weakest.causes.length > 0 && (
-          <Box flexDirection="column">
-            <Text bold>Weakest: {weakest.name}</Text>
+          <Box flexDirection="column" borderStyle="round" borderDimColor paddingX={1}>
+            <Text weight="semibold" color={tone(weakest.score)}>Weakest: {weakest.name}</Text>
             {weakest.causes.map(c => (
               <Text key={c} dimColor>
                 {'  '}{c}
               </Text>
             ))}
+            <Text dimColor italic>Rule that moves it: {RULES[weakest.key]}</Text>
           </Box>
         )}
+
+        <Box gap="xs" alignItems="center" flexWrap="wrap">
+          <Text dimColor>Compare:</Text>
+          <Button key="team" label="Team median" variant={p?.login === 'team' ? 'primary' : 'secondary'} onPress={() => compare($, scoresRepo, 'team')} />
+          {Input ? <Input key="peer" placeholder="GitHub login" submitLabel="Compare" onSubmit={v => compare($, scoresRepo, v.trim())} /> : null}
+          {p ? <Button key="clear" label="Clear" onPress={() => update($, peer, () => null)} /> : null}
+          {p ? <Text dimColor>vs {p.login}</Text> : null}
+        </Box>
+
         {exp ? (
-          <Box flexDirection="column">
+          <Box flexDirection="column" gap="xs">
             <Text>
-              Experiment since {exp.startedAt.slice(0, 10)}: {exp.rule}
+              Experiment since {exp.startedAt.slice(0, 10)} on {exp.dim}, baseline {exp.baseline}: {exp.rule}
             </Text>
-            <Button key="stop" label="Stop and measure" onPress={() => stopExperiment($)} />
+            <Box>
+              <Button key="stop" label="Stop and measure" variant="primary" onPress={() => stopExperiment($)} />
+            </Box>
           </Box>
         ) : (
-          <Box>
+          <Box gap="xs">
             <Button key="refresh" label="Refresh" onPress={() => refresh($)} />
-            <Button key="exp" label="Start experiment" onPress={() => startExperiment($)} />
-            <Button key="team" label={p ? 'Clear compare' : 'Compare: team'} onPress={() => (p ? update($, peer, () => null) : compare($, scoresRepo, 'team'))} />
+            <Button key="exp" label="Start experiment" variant="primary" onPress={() => startExperiment($)} />
+            <Button key="share" label="Share scores" onPress={() => $.ui.toast('Run /pilot share to publish your scores.')} />
           </Box>
         )}
       </Box>

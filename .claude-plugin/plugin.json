@@ -1,7 +1,7 @@
 {
   "name": "pilot-scorecard",
   "displayName": "Pilot scorecard",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Per-engineer scorecard for working with Claude Code: brief quality, verification, context hygiene, delegation, flow. Daily series, 7/14/30/60-day windows vs the prior window, one-week experiments, opt-in comparison with teammates.",
   "license": "MIT",
   "author": {

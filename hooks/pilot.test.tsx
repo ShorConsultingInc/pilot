@@ -48,7 +48,7 @@ test('/pilot scores through the analyzer and the pane shows the weakest dimensio
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect((await ui.find({ type: 'Text', text: /Weakest: Verification/ }))?.text).toBe('Weakest: Verification')
   expect((await ui.find({ type: 'Text', text: /never read/ }))?.text).toContain('0.40')
-  expect((await ui.find({ type: 'Text', text: /Brief quality/ }))?.text).toContain('+10')
+  expect((await ui.find({ type: 'Text', text: /^\s*\+10$/ }))?.text).toContain('+10')
   expect((await ui.find({ type: 'Text', text: /now$/ }))?.text).toMatch(/[▁-█]{7} now/)
   await ui.unmount()
 
