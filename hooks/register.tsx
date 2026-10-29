@@ -109,6 +109,7 @@ const COLORS: Record<DimKey, string> = { brief: '#4f8ef7', verify: '#f59e0b', co
 const NAMES: Record<DimKey, string> = { brief: 'Brief', verify: 'Verify', context: 'Context', delegate: 'Delegate', flow: 'Flow' }
 
 // Line chart: the window's daily scores solid, the prior window dashed, one line per dimension.
+// The root carries width and height: the desktop draws nothing of a pane whose Svg has only a viewBox.
 function chart(cur: Report['daily'], prior: Report['daily'], days: number): string {
   const W = 620, H = 190, L = 28, R = 8, T = 10, B = 34
   const x = (i: number) => L + (i * (W - L - R)) / Math.max(1, days - 1)
@@ -122,7 +123,7 @@ function chart(cur: Report['daily'], prior: Report['daily'], days: number): stri
   const legend = (Object.keys(COLORS) as DimKey[]).map((k, i) =>
     `<rect x="${L + i * 110}" y="${H - 18}" width="10" height="3" fill="${COLORS[k]}"/><text x="${L + i * 110 + 14}" y="${H - 14}" font-size="10" fill="#888">${NAMES[k]}</text>`).join('')
   const note = `<text x="${W - R}" y="${H - 14}" font-size="9" fill="#888" text-anchor="end">solid: last ${days}d · dashed: the ${days} before</text>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" font-family="system-ui, sans-serif">${grid}${lines}${legend}${note}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${grid}${lines}${legend}${note}</svg>`
 }
 
 export const register: Register = (on, options) => {
@@ -273,7 +274,7 @@ export const register: Register = (on, options) => {
           <Text mono dimColor>{' '.repeat(17)}{spark(cur.slice(-sparkCols).map(x => x.scores[win.weakest ?? 'brief']))} now</Text>
         </Box>
 
-        {Svg ? <Svg source={chart(cur, prior, w)} alt={`Daily scores for the last ${w} days, solid, against the ${w} before, dashed.`} width={Math.min(620, cols * 8)} /> : null}
+        {Svg ? <Svg source={chart(cur, prior, w)} alt={`Daily scores for the last ${w} days, solid, against the ${w} before, dashed.`} /> : null}
 
         {weakest && weakest.causes.length > 0 && (
           <Box flexDirection="column" borderStyle="round" borderDimColor paddingX={1}>
